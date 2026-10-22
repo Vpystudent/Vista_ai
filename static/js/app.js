@@ -9,6 +9,9 @@ let videoStream = null;
 let currentFacingMode = 'user';
 let lastInferenceTime = 0;
 let isProcessingFrame = false;
+let watchdogTimer = null;
+let lastInferenceWidth = 480;
+let lastInferenceHeight = 270;
 
 // DOM Elements
 const video = document.getElementById('webcam-video');
@@ -38,6 +41,14 @@ document.addEventListener('DOMContentLoaded', () => {
   initWebSocket();
 });
 
+function clearWatchdog() {
+  if (watchdogTimer) {
+    clearTimeout(watchdogTimer);
+    watchdogTimer = null;
+  }
+  isProcessingFrame = false;
+}
+
 // 1. Initialize WebSocket Connection
 function initWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -47,14 +58,17 @@ function initWebSocket() {
 
   socket.onopen = () => {
     console.log('[VISTA WS] Connected to detection engine.');
+    clearWatchdog();
   };
 
   socket.onmessage = (event) => {
-    isProcessingFrame = false;
+    clearWatchdog();
     try {
       const data = JSON.parse(event.data);
       if (data.success) {
         latestDetections = data.detections || [];
+        if (data.frame_width) lastInferenceWidth = data.frame_width;
+        if (data.frame_height) lastInferenceHeight = data.frame_height;
         updateTelemetry(data);
         renderTargetFeed(latestDetections);
       }
@@ -65,11 +79,12 @@ function initWebSocket() {
 
   socket.onerror = (err) => {
     console.warn('[VISTA WS Warning]: WebSocket error, fallback active.');
-    isProcessingFrame = false;
+    clearWatchdog();
   };
 
   socket.onclose = () => {
     console.log('[VISTA WS] Disconnected. Reconnecting in 3s...');
+    clearWatchdog();
     setTimeout(initWebSocket, 3000);
   };
 }
@@ -112,8 +127,10 @@ async function startCamera() {
       video.play();
       canvas.width = video.videoWidth || 1280;
       canvas.height = video.videoHeight || 720;
-      offscreenCanvas.width = 640;
-      offscreenCanvas.height = Math.round((canvas.height / canvas.width) * 640);
+      offscreenCanvas.width = 480;
+      offscreenCanvas.height = Math.round((canvas.height / canvas.width) * 480);
+      lastInferenceWidth = offscreenCanvas.width;
+      lastInferenceHeight = offscreenCanvas.height;
 
       document.getElementById('camera-prompt-overlay').classList.add('hidden');
       isStreaming = true;
@@ -244,9 +261,9 @@ function renderLoop() {
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
   // 2. Draw tactical squares & confidence percentages for detected targets
-  if (latestDetections.length > 0) {
-    const scaleX = canvas.width / (offscreenCanvas.width || 640);
-    const scaleY = canvas.height / (offscreenCanvas.height || 360);
+  if (latestDetections.length > 0 && lastInferenceWidth > 0 && lastInferenceHeight > 0) {
+    const scaleX = canvas.width / lastInferenceWidth;
+    const scaleY = canvas.height / lastInferenceHeight;
 
     latestDetections.forEach((d) => {
       const [origX1, origY1, origX2, origY2] = d.box;
@@ -262,9 +279,9 @@ function renderLoop() {
     });
   }
 
-  // 3. Trigger frame inference if ready (throttled to ~15 FPS to ensure responsiveness)
+  // 3. Trigger frame inference if ready (throttled to ~10 FPS for optimal cloud and local throughput)
   const now = performance.now();
-  if (!isProcessingFrame && (now - lastInferenceTime > 70)) {
+  if (!isProcessingFrame && (now - lastInferenceTime > 100)) {
     sendFrameForInference();
     lastInferenceTime = now;
   }
@@ -332,13 +349,18 @@ function drawTargetSquare(x, y, w, h, className, confPct) {
 
 // 6. Send Frame to Backend YOLO11 Engine
 function sendFrameForInference() {
-  if (!isStreaming) return;
+  if (!isStreaming || isProcessingFrame) return;
 
   isProcessingFrame = true;
+  // Safety watchdog: reset after 1200ms if no response is received
+  clearTimeout(watchdogTimer);
+  watchdogTimer = setTimeout(() => {
+    isProcessingFrame = false;
+  }, 1200);
 
-  // Render to offscreen canvas for high-speed lightweight transmission
+  // Render to offscreen canvas for high-speed lightweight transmission (480px, 0.5 quality ~18KB)
   offscreenCtx.drawImage(video, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
-  const dataUrl = offscreenCanvas.toDataURL('image/jpeg', 0.65);
+  const dataUrl = offscreenCanvas.toDataURL('image/jpeg', 0.5);
 
   const payload = {
     image: dataUrl,
@@ -358,14 +380,18 @@ function sendFrameForInference() {
     })
     .then(r => r.json())
     .then(data => {
-      isProcessingFrame = false;
-      if (data.success) {
+      clearWatchdog();
+      if (data && data.success) {
         latestDetections = data.detections || [];
+        if (data.frame_width) lastInferenceWidth = data.frame_width;
+        if (data.frame_height) lastInferenceHeight = data.frame_height;
         updateTelemetry(data);
         renderTargetFeed(latestDetections);
       }
     })
-    .catch(() => { isProcessingFrame = false; });
+    .catch((err) => {
+      clearWatchdog();
+    });
   }
 }
 

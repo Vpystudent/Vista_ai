@@ -17,9 +17,10 @@ uploads/*
 feedback_data/*
 !feedback_data/.gitkeep
 
-# Ultralytics runs & heavy model weights (auto-downloaded on launch)
+# Ultralytics runs & heavy model weights (include lightweight nano model)
 runs/
 *.pt
+!yolo11n.pt
 
 # IDEs & System files
 .vscode/

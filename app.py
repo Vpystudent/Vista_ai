@@ -1,14 +1,30 @@
 import os
+
+# Crucial for low-resource cloud containers (Render, HuggingFace, Docker)
+# Prevents GNU OpenMP / MKL multi-threading deadlocks and RAM exhaustion
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["YOLO_VERBOSE"] = "False"
+
 import json
 import base64
 import time
 import cv2
 import numpy as np
 import torch
+
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+torch.set_grad_enabled(False)
+
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 
 from core.detector import VistaDetector
 from core.feedback import HumanVerificationManager
@@ -59,24 +75,27 @@ async def get_system_status():
 async def detect_frame_http(request: Request):
     """
     HTTP fallback endpoint for single frame detection.
+    Runs inference in threadpool so the asyncio event loop is never blocked.
     """
-    body = await request.json()
-    img_b64 = body.get("image", "")
-    if "," in img_b64:
-        img_b64 = img_b64.split(",")[1]
-
-    targets = body.get("targets", [])
-    conf = float(body.get("conf", 0.35))
-    iou = float(body.get("iou", 0.45))
-
     try:
+        body = await request.json()
+        img_b64 = body.get("image", "")
+        if "," in img_b64:
+            img_b64 = img_b64.split(",")[1]
+
+        targets = body.get("targets", [])
+        conf = float(body.get("conf", 0.35))
+        iou = float(body.get("iou", 0.45))
+
         img_bytes = base64.b64decode(img_b64)
         nparr = np.frombuffer(img_bytes, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if frame is None:
             return JSONResponse({"success": False, "error": "Invalid frame"})
 
-        res = detector.detect_frame_boxes(frame, manual_targets=targets, conf=conf, iou=iou)
+        res = await run_in_threadpool(
+            detector.detect_frame_boxes, frame, targets, conf, iou
+        )
         return JSONResponse(res)
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
@@ -110,7 +129,9 @@ async def websocket_live_stream(websocket: WebSocket):
             frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
             if frame is not None:
-                result = detector.detect_frame_boxes(frame, manual_targets=targets, conf=conf, iou=iou)
+                result = await run_in_threadpool(
+                    detector.detect_frame_boxes, frame, targets, conf, iou
+                )
                 await websocket.send_text(json.dumps(result))
             else:
                 await websocket.send_text(json.dumps({"success": False, "detections": []}))

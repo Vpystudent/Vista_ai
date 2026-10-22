@@ -37,6 +37,15 @@ class VistaDetector:
         self.model = YOLO(model_path)
         self.class_names = self.model.names if hasattr(self.model, "names") else {}
 
+        # Warm up the model so the first user frame does not lag or timeout
+        try:
+            dummy = np.zeros((320, 320, 3), dtype=np.uint8)
+            with torch.inference_mode():
+                self.model.predict(source=dummy, imgsz=320, conf=0.35, device=self.device, verbose=False)
+            print("[VISTA] YOLO11 warmup complete.")
+        except Exception as e:
+            print(f"[VISTA Warmup Note]: {e}")
+
     def resolve_target_classes(self, manual_targets: list) -> set:
         """
         Maps user input strings (e.g. ['drone', 'person', 'phone'])
@@ -78,14 +87,16 @@ class VistaDetector:
         # Resolve target classes from user input
         active_targets = self.resolve_target_classes(manual_targets)
 
-        # Run YOLO11 inference
-        results = self.model.predict(
-            source=frame_bgr,
-            conf=conf,
-            iou=iou,
-            device=self.device,
-            verbose=False
-        )
+        # Run YOLO11 inference with imgsz=320 for rapid CPU/GPU real-time throughput
+        with torch.inference_mode():
+            results = self.model.predict(
+                source=frame_bgr,
+                imgsz=320,
+                conf=conf,
+                iou=iou,
+                device=self.device,
+                verbose=False
+            )
 
         latency_ms = (time.perf_counter() - start_time) * 1000.0
         fps = 1000.0 / latency_ms if latency_ms > 0 else 0
