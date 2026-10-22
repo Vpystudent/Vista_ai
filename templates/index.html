@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VISTA // Aerial Target Acquisition</title>
+  <link rel="icon" type="image/jpeg" href="/static/logo.jpg?v=8">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #0b0f17;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .panel-card {
+      background: #111726;
+      border: 1px solid #1e293b;
+    }
+    /* Subtle Crosshair Reticle Grid */
+    .viewport-grid {
+      background-image: 
+        radial-gradient(circle at center, rgba(6, 182, 212, 0.04) 0%, transparent 70%),
+        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 100% 100%, 48px 48px, 48px 48px;
+    }
+    /* Custom clean scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0b0f17;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+  </style>
+</head>
+<body class="text-slate-200 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-black">
+
+  <!-- TOP NAVIGATION HEADER -->
+  <header class="border-b border-slate-800/80 bg-[#0d131f]/95 backdrop-blur-md sticky top-0 z-50 px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-3">
+    <!-- Brand & Project Info with Logo -->
+    <div class="flex items-center space-x-3 sm:space-x-3.5 min-w-0">
+      <img src="/static/logo.jpg?v=8" alt="VISTA Logo" class="w-11 h-11 sm:w-13 sm:h-13 rounded-xl object-contain bg-[#070a10] border border-cyan-500/40 p-1 shadow-md shadow-cyan-500/15 flex-shrink-0">
+      <div class="min-w-0">
+        <div class="flex items-center space-x-2">
+          <h1 class="text-base sm:text-lg font-extrabold tracking-wide text-white leading-tight">VISTA</h1>
+          <span id="cam-status-pill" class="text-[10px] sm:text-[11px] px-2 sm:px-2.5 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-800/60 mono flex items-center space-x-1.5 font-medium whitespace-nowrap">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+            <span>STANDBY</span>
+          </span>
+        </div>
+        <p class="text-[10px] sm:text-xs text-slate-400 font-normal mt-0.5 leading-snug">Visual Intelligence & Spatial Target Analysis</p>
+      </div>
+    </div>
+
+    <!-- Live Telemetry Badges (FPS, Latency, Target Counter) -->
+    <div class="flex items-center space-x-2 text-xs mono flex-shrink-0">
+      <div class="hidden md:flex items-center space-x-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl">
+        <span class="text-slate-400 text-[11px]">FPS:</span>
+        <span id="stat-fps" class="text-emerald-400 font-bold">0.0</span>
+      </div>
+      <div class="hidden sm:flex items-center space-x-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl">
+        <span class="text-slate-400 text-[11px]">LATENCY:</span>
+        <span id="stat-latency" class="text-cyan-400 font-bold">-- ms</span>
+      </div>
+      <div class="flex items-center space-x-1.5 bg-slate-900/90 border border-slate-800 px-2.5 sm:px-3 py-1.5 rounded-xl">
+        <span class="text-slate-400 text-[10px] sm:text-[11px]">TARGETS:</span>
+        <span id="stat-targets-count" class="text-amber-400 font-bold text-xs sm:text-sm">0</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN OPERATOR WORKSTATION -->
+  <main class="flex-1 p-3 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 max-w-[1700px] w-full mx-auto">
+
+    <!-- LEFT / CENTER: PRIMARY SENSOR FEED (8 cols) -->
+    <div class="lg:col-span-8 flex flex-col space-y-3 sm:space-y-4">
+      
+      <!-- SENSOR VIEWPORT CONTAINER (With Dedicated Top Status Bar) -->
+      <div class="bg-[#070a10] rounded-2xl border border-slate-800 overflow-hidden flex flex-col shadow-2xl flex-1">
+        
+        <!-- Clean Dedicated Status Bar (Never overlaps video, bounding boxes, or corner lines!) -->
+        <div class="bg-[#0e1422] border-b border-slate-800/90 px-3 sm:px-4 py-2 flex items-center justify-between gap-2 z-20">
+          <!-- Sensor 01 Indicator -->
+          <div class="flex items-center space-x-1.5 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800/80">
+            <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+            <span class="text-[10px] sm:text-xs font-semibold text-slate-200 mono whitespace-nowrap">SENSOR 01</span>
+          </div>
+
+          <!-- Target Mode Badge -->
+          <div id="target-mode-badge" class="bg-slate-950 px-2.5 sm:px-3 py-1 rounded-lg border border-cyan-500/40 text-cyan-300 text-[10px] sm:text-xs font-medium mono text-center truncate max-w-[210px] sm:max-w-none">
+            TARGET FILTER: DETECT ALL
+          </div>
+
+          <!-- Model Engine Pill -->
+          <div class="hidden sm:flex items-center bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800/80 text-[10px] sm:text-xs text-slate-400 mono whitespace-nowrap">
+            YOLO11 AI
+          </div>
+        </div>
+
+        <!-- Video & Canvas Body Area (100% clean and unobstructed) -->
+        <div class="relative flex-1 min-h-[280px] sm:min-h-[480px] flex items-center justify-center viewport-grid overflow-hidden">
+          <!-- Hidden WebRTC Video Source -->
+          <video id="webcam-video" autoplay playsinline muted class="hidden"></video>
+          
+          <!-- Live HUD Canvas (Where video + bounding boxes + confidence % are rendered) -->
+          <canvas id="hud-canvas" class="w-full h-full object-contain max-h-[440px] sm:max-h-[580px] z-10"></canvas>
+
+          <!-- Prompt Overlay Before Camera Starts -->
+          <div id="camera-prompt-overlay" class="absolute inset-0 bg-[#0b0f17]/90 backdrop-blur-sm flex flex-col items-center justify-center z-40 p-6 text-center">
+            <div class="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-700 flex items-center justify-center text-cyan-400 mb-4 shadow-xl">
+              <i class="fa-solid fa-video text-2xl"></i>
+            </div>
+            <h2 class="text-lg font-bold text-white mb-1.5">Live Camera Feed Offline</h2>
+            <p class="text-xs text-slate-400 max-w-sm mb-5 leading-relaxed">
+              Initialize your camera to start real-time aerial target analysis with YOLO11 detection and confidence tracking.
+            </p>
+            <button id="connect-camera-btn" class="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs tracking-wider shadow-lg shadow-cyan-500/20 transition-all flex items-center space-x-2">
+              <i class="fa-solid fa-play text-xs"></i>
+              <span>INITIALIZE LIVE FEED</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- CAMERA CONTROLS & SENSITIVITY TOOLBAR -->
+      <div class="panel-card rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
+        
+        <!-- Feed Toggle & Switcher -->
+        <div class="flex items-center space-x-2 sm:space-x-2.5">
+          <button id="toggle-feed-btn" class="flex-1 sm:flex-initial px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl transition-all flex items-center justify-center space-x-2 shadow-sm whitespace-nowrap">
+            <i class="fa-solid fa-video"></i>
+            <span id="toggle-feed-label">Start Feed</span>
+          </button>
+          <button id="switch-camera-btn" class="flex-1 sm:flex-initial px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-xl border border-slate-700 transition-all flex items-center justify-center space-x-1.5 whitespace-nowrap" title="Switch Camera Device">
+            <i class="fa-solid fa-camera-rotate"></i>
+            <span>Switch Device</span>
+          </button>
+        </div>
+
+        <!-- Confidence Threshold Slider -->
+        <div class="flex-1 min-w-[200px]">
+          <div class="flex justify-between items-center text-xs mb-1.5">
+            <span class="text-slate-400 font-medium">Confidence Filter Threshold:</span>
+            <span id="conf-val" class="text-cyan-400 font-bold mono">35%</span>
+          </div>
+          <input type="range" id="conf-slider" min="10" max="90" value="35" class="w-full accent-cyan-400 h-1.5 bg-slate-800 rounded-lg cursor-pointer">
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- RIGHT: MANUAL TARGET CONFIGURATION & TELEMETRY (4 cols) -->
+    <div class="lg:col-span-4 flex flex-col space-y-4">
+
+      <!-- MANUAL TARGET SELECTION CARD -->
+      <div class="panel-card rounded-2xl p-4 shadow-xl">
+        
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center">
+            <i class="fa-solid fa-bullseye mr-2 text-cyan-400"></i>
+            Target Objects to Identify
+          </h2>
+          <span class="text-[10px] mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded font-medium">MANUAL INPUT</span>
+        </div>
+        
+        <p class="text-[11px] text-slate-400 mb-3 leading-relaxed">
+          Specify target objects below. VISTA isolates and draws squares <span class="text-cyan-300 font-medium">only</span> around matching targets.
+        </p>
+
+        <!-- Input Box for Manual Target Names -->
+        <div class="flex items-center space-x-2 mb-3">
+          <div class="relative flex-1">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-500"></i>
+            <input type="text" id="target-input" placeholder="Type target (e.g. person, phone, car) & Enter" 
+                   class="w-full bg-[#080d17] border border-slate-700/80 focus:border-cyan-400 rounded-xl pl-8 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none transition-all">
+          </div>
+          <button id="add-target-btn" class="px-3.5 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-sm">
+            Add
+          </button>
+        </div>
+
+        <!-- Active Targets Tags Container -->
+        <div class="mb-3">
+          <p class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">Active Target Filter:</p>
+          <div id="active-targets-list" class="flex flex-wrap gap-1.5 min-h-[34px] p-2 bg-[#080d17] rounded-xl border border-slate-800">
+            <!-- Dynamic tags added here -->
+          </div>
+        </div>
+
+        <!-- Quick-Select Drone Target Presets -->
+        <div>
+          <p class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">Quick Presets (Click to add):</p>
+          <div class="flex flex-wrap gap-1.5">
+            <button onclick="addTargetPreset('person')" class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 hover:text-white text-slate-300 text-[11px] border border-slate-700/60 transition-all">
+              + Person
+            </button>
+            <button onclick="addTargetPreset('phone')" class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 hover:text-white text-slate-300 text-[11px] border border-slate-700/60 transition-all">
+              + Cell Phone
+            </button>
+            <button onclick="addTargetPreset('car')" class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 hover:text-white text-slate-300 text-[11px] border border-slate-700/60 transition-all">
+              + Car
+            </button>
+            <button onclick="addTargetPreset('drone')" class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 hover:text-white text-slate-300 text-[11px] border border-slate-700/60 transition-all">
+              + Drone / UAV
+            </button>
+            <button onclick="addTargetPreset('backpack')" class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 hover:text-white text-slate-300 text-[11px] border border-slate-700/60 transition-all">
+              + Backpack
+            </button>
+            <button onclick="addTargetPreset('bottle')" class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 hover:text-white text-slate-300 text-[11px] border border-slate-700/60 transition-all">
+              + Bottle
+            </button>
+            <button onclick="clearAllTargets()" class="px-2.5 py-1 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-[11px] border border-rose-800/50 transition-all">
+              Clear Filter (Detect All)
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- LIVE DETECTED TARGETS FEED -->
+      <div class="panel-card rounded-2xl p-4 flex-1 flex flex-col min-h-[300px] shadow-xl">
+        <div class="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
+          <div>
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider flex items-center">
+              <i class="fa-solid fa-radar mr-2 text-cyan-400"></i>
+              Live Target Acquisition Feed
+            </h3>
+            <p class="text-[10px] text-slate-400">Label and confidence percentage</p>
+          </div>
+          <span id="detected-counter-badge" class="text-[11px] mono bg-slate-800 px-2 py-0.5 rounded text-cyan-300 font-medium">
+            0 Found
+          </span>
+        </div>
+
+        <!-- Scrollable Cards for Locked Targets -->
+        <div id="live-targets-list" class="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[340px]">
+          <div class="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500 text-xs">
+            <i class="fa-solid fa-crosshairs text-2xl mb-2 text-slate-600"></i>
+            <p>Scanning live feed... objects matching your manual targets will appear here.</p>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Connect Controller Script -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

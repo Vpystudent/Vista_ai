@@ -1,0 +1,29 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Temporary media & user uploads
+uploads/*
+!uploads/.gitkeep
+feedback_data/*
+!feedback_data/.gitkeep
+
+# Ultralytics runs & heavy model weights (auto-downloaded on launch)
+runs/
+*.pt
+
+# IDEs & System files
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
