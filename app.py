@@ -57,6 +57,11 @@ async def serve_home():
     """Serves the VISTA Live Drone Feed HUD."""
     return FileResponse(os.path.join(TEMPLATES_DIR, "index.html"))
 
+@app.get("/presentation")
+async def serve_presentation():
+    """Serves the interactive VISTA slide deck presentation."""
+    return FileResponse(os.path.join(BASE_DIR, "presentation.html"))
+
 @app.get("/api/status")
 async def get_system_status():
     """Returns runtime telemetry and model class list."""
